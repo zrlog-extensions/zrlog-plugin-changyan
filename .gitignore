@@ -15,3 +15,7 @@
 !.mvn/wrapper/maven-wrapper.jar
 changyan.bgv
 *.lck
+node_modules/
+*.tsbuildinfo
+src/main/frontend/build
+src/main/resources/templates

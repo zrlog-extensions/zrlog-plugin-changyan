@@ -4,7 +4,7 @@ mkdir -p ${basePath}
 echo "real target folder ${basePath}"
 
 java -version
-./mvnw clean package
+./mvnw -PnodeBuild clean package
 ./mvnw -Pnative -Dagent exec:exec@java-agent -U
 ./mvnw -Pnative package
 binName=changyan

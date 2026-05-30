@@ -3,6 +3,7 @@ package com.zrlog.plugin.changyan;
 
 import com.zrlog.plugin.changyan.controller.ChangyanController;
 import com.zrlog.plugin.client.NioClient;
+import com.zrlog.plugin.render.SimpleTemplateRender;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -13,9 +14,8 @@ public class Application {
      * @param args
      */
     public static void main(String[] args) throws IOException {
-        List<Class> classList = new ArrayList<>();
+        List<Class<?>> classList = new ArrayList<>();
         classList.add(ChangyanController.class);
-        new NioClient(new ChangyanClientActionHandler()).connectServer(args, classList, ChangyanPluginAction.class);
+        new NioClient(null, new SimpleTemplateRender(), new ChangyanClientActionHandler()).connectServer(args, classList, ChangyanPluginAction.class);
     }
 }
-

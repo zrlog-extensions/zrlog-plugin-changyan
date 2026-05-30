@@ -17,17 +17,23 @@ import com.zrlog.plugin.render.SimpleTemplateRender;
 import com.zrlog.plugin.type.ActionType;
 
 import java.net.URL;
-import java.util.*;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Objects;
+import java.util.UUID;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public class ChangyanController {
 
     private static final Logger LOGGER = LoggerUtil.getLogger(ChangyanController.class);
+    private static final String CONFIG_KEYS = "appId,appKey,status,commentEmailNotify,callbackUrl";
 
     private final IOSession session;
     private final MsgPacket requestPacket;
     private final HttpRequestInfo requestInfo;
+    private final Gson gson = new Gson();
 
     public ChangyanController(IOSession session, MsgPacket requestPacket, HttpRequestInfo requestInfo) {
         this.session = session;
@@ -44,42 +50,32 @@ public class ChangyanController {
         });
     }
 
-    public void index() {
-        Map<String, Object> keyMap = new HashMap<>();
-        keyMap.put("key", "appId,appKey,status,commentEmailNotify,callbackUrl");
-        session.sendJsonMsg(keyMap, ActionType.GET_WEBSITE.name(), IdUtil.getInt(), MsgPacketStatus.SEND_REQUEST, msgPacket -> {
-            Map map = new Gson().fromJson(msgPacket.getDataStr(), Map.class);
-            map.put("userName", requestInfo.getUserName());
-            map.put("userId", requestInfo.getUserId());
-            map.put("fullUrl", requestInfo.getFullUrl().replace("install", ""));
-            if (map.get("callbackUrl") == null || "".equals(map.get("callbackUrl"))) {
-                map.put("callbackUrl", requestInfo.getAccessUrl() + "/p/" + session.getPlugin().getShortName() + "/sync/" + UUID.randomUUID().toString().replace("-", ""));
-            }
-            if (!Objects.equals(map.get("status"), "on")) {
-                map.remove("status");
-            }
-            if (!Objects.equals(map.get("commentEmailNotify"), "on")) {
-                map.remove("commentEmailNotify");
-            }
-            Map<String, Object> data = new HashMap<>();
-            data.put("theme", Objects.equals(requestInfo.getHeader().get("Dark-Mode"), "true") ? "dark" : "light");
-            data.put("data", new Gson().toJson(map));
-            session.responseHtmlStr(new SimpleTemplateRender().render("/templates/index", session.getPlugin(), data), requestPacket.getMethodStr(), requestPacket.getMsgId());
-        });
+    public void info() {
+        response(loadConfig());
+    }
 
+    public void index() {
+        Map<String, Object> data = new HashMap<>();
+        data.put("theme", isDarkMode() ? "dark" : "light");
+        data.put("data", gson.toJson(pageData()));
+        session.responseHtml("/templates/index", data, requestPacket.getMethodStr(), requestPacket.getMsgId());
+    }
+
+    public void json() {
+        response(pageData());
     }
 
     public void widget() {
         Map<String, Object> keyMap = new HashMap<>();
         keyMap.put("key", "appId");
         session.sendJsonMsg(keyMap, ActionType.GET_WEBSITE.name(), IdUtil.getInt(), MsgPacketStatus.SEND_REQUEST, msgPacket -> {
-            Map map = new Gson().fromJson(msgPacket.getDataStr(), Map.class);
+            Map map = gson.fromJson(msgPacket.getDataStr(), Map.class);
             String articleId = (String) requestInfo.simpleParam().get("articleId");
             if (Objects.isNull(articleId)) {
                 articleId = "-1";
             }
             map.put("articleId", articleId);
-            session.responseHtmlStr(new SimpleTemplateRender().render("/templates/widget", session.getPlugin(), map), requestPacket.getMethodStr(), requestPacket.getMsgId());
+            session.responseHtml("/widget", map, requestPacket.getMethodStr(), requestPacket.getMsgId());
         });
 
     }
@@ -91,14 +87,14 @@ public class ChangyanController {
         Map<String, Object> keyMap = new HashMap<>();
         keyMap.put("key", "short_name,secret,status,commentEmailNotify,callbackUrl");
         session.sendJsonMsg(keyMap, ActionType.GET_WEBSITE.name(), IdUtil.getInt(), MsgPacketStatus.SEND_REQUEST, msgPacket -> {
-            Map<String, Object> changyan = new Gson().fromJson(msgPacket.getDataStr(), Map.class);
+            Map<String, Object> changyan = gson.fromJson(msgPacket.getDataStr(), Map.class);
             String callbackUrl = (String) changyan.get("callbackUrl");
             String ignoreChar = "/p" + "/" + session.getPlugin().getShortName();
             try {
                 if (callbackUrl != null && new URL(callbackUrl).getPath().replace(ignoreChar, "").equals(requestInfo.getUri().replace(".action", ""))) {
                     String commentJsonStr = requestInfo.getParam().get("data")[0];
                     LOGGER.info(commentJsonStr);
-                    final ChangyanComment changyanComment = new Gson().fromJson(commentJsonStr, ChangyanComment.class);
+                    final ChangyanComment changyanComment = gson.fromJson(commentJsonStr, ChangyanComment.class);
                     Map<String, Object> response = new HashMap<>();
                     dealSyncRequest(response, changyanComment, "on".equals(changyan.get("commentEmailNotify")));
                 } else {
@@ -112,13 +108,79 @@ public class ChangyanController {
 
     }
 
+    private Map<String, Object> pageData() {
+        Map<String, Object> data = new HashMap<>();
+        data.put("dark", isDarkMode());
+        data.put("colorPrimary", getAdminColorPrimary());
+        data.put("plugin", session.getPlugin());
+        data.put("config", loadConfig());
+        return successMap(data);
+    }
+
+    private Map<String, Object> loadConfig() {
+        Map<String, Object> keyMap = new HashMap<>();
+        keyMap.put("key", CONFIG_KEYS);
+        Map response = session.getResponseSync(ContentType.JSON, keyMap, ActionType.GET_WEBSITE, Map.class);
+        Map<String, Object> config = response == null ? new HashMap<>() : new HashMap<>(response);
+        if (isBlank(config.get("callbackUrl"))) {
+            config.put("callbackUrl", requestInfo.getAccessUrl() + "/p/" + session.getPlugin().getShortName() + "/sync/" + UUID.randomUUID().toString().replace("-", ""));
+        }
+        normalizeSwitch(config, "status");
+        normalizeSwitch(config, "commentEmailNotify");
+        config.put("version", session.getPlugin().getVersion());
+        return config;
+    }
+
+    private boolean isBlank(Object value) {
+        return value == null || "".equals(value);
+    }
+
+    private void normalizeSwitch(Map<String, Object> config, String key) {
+        if (!Objects.equals(config.get(key), "on")) {
+            config.put(key, "off");
+        }
+    }
+
+    private Map<String, Object> successMap(Object data) {
+        Map<String, Object> map = new HashMap<>();
+        map.put("success", true);
+        map.put("data", data);
+        return map;
+    }
+
+    private void response(Map<String, Object> map) {
+        session.sendMsg(ContentType.JSON, map, requestPacket.getMethodStr(), requestPacket.getMsgId(), MsgPacketStatus.RESPONSE_SUCCESS);
+    }
+
+    private boolean isDarkMode() {
+        return requestInfo.getHeader() != null && Objects.equals(requestInfo.getHeader().get("Dark-Mode"), "true");
+    }
+
+    private String getAdminColorPrimary() {
+        if (requestInfo.getHeader() == null) {
+            return null;
+        }
+        String color = requestInfo.getHeader().get("Admin-Color-Primary");
+        if (color == null) {
+            color = requestInfo.getHeader().get("admin-color-primary");
+        }
+        if (color == null) {
+            for (Map.Entry<String, String> entry : requestInfo.getHeader().entrySet()) {
+                if ("admin-color-primary".equalsIgnoreCase(entry.getKey())) {
+                    return entry.getValue();
+                }
+            }
+        }
+        return color;
+    }
+
     private void dealSyncRequest(final Map<String, Object> response, final ChangyanComment changyanComment, final boolean emailNotify) {
         if (changyanComment != null) {
             LOGGER.info("sync action " + changyanComment);
             for (CommentsEntry commentsEntry : changyanComment.getComments()) {
                 final Comment comment = getComment(changyanComment, commentsEntry);
 
-                LOGGER.log(Level.INFO, "changyan call " + new Gson().toJson(comment));
+                LOGGER.log(Level.INFO, "changyan call " + gson.toJson(comment));
                 session.sendMsg(ContentType.JSON, comment, ActionType.ADD_COMMENT.name(), IdUtil.getInt(), MsgPacketStatus.SEND_REQUEST, msgPacket -> {
                     response.put("status", msgPacket.getStatus() == MsgPacketStatus.RESPONSE_SUCCESS ? 200 : 500);
                     session.sendMsg(ContentType.JSON, response, requestPacket.getMethodStr(), requestPacket.getMsgId(), MsgPacketStatus.RESPONSE_SUCCESS);
