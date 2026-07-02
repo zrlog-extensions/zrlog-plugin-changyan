@@ -42,11 +42,9 @@ public class ChangyanController {
     }
 
     public void update() {
-        session.sendMsg(new MsgPacket(requestInfo.simpleParam(), ContentType.JSON, MsgPacketStatus.SEND_REQUEST, IdUtil.getInt(),
+        session.sendMsg(new MsgPacket(requestConfig(), ContentType.JSON, MsgPacketStatus.SEND_REQUEST, IdUtil.getInt(),
                 ActionType.SET_WEBSITE.name()), msgPacket -> {
-            Map<String, Object> map = new HashMap<>();
-            map.put("success", true);
-            session.sendMsg(new MsgPacket(map, ContentType.JSON, MsgPacketStatus.RESPONSE_SUCCESS, requestPacket.getMsgId(), requestPacket.getMethodStr()));
+            response(ChangyanApiResponse.success());
         });
     }
 
@@ -66,14 +64,14 @@ public class ChangyanController {
     }
 
     public void widget() {
-        Map<String, Object> keyMap = new HashMap<>();
-        keyMap.put("key", "appId");
-        session.sendJsonMsg(keyMap, ActionType.GET_WEBSITE.name(), IdUtil.getInt(), MsgPacketStatus.SEND_REQUEST, msgPacket -> {
-            Map map = gson.fromJson(msgPacket.getDataStr(), Map.class);
-            String articleId = (String) requestInfo.simpleParam().get("articleId");
+        session.sendJsonMsg(WebsiteKeyRequest.of("appId"), ActionType.GET_WEBSITE.name(), IdUtil.getInt(), MsgPacketStatus.SEND_REQUEST, msgPacket -> {
+            ChangyanConfig config = gson.fromJson(msgPacket.getDataStr(), ChangyanConfig.class);
+            String articleId = paramValue("articleId");
             if (Objects.isNull(articleId)) {
                 articleId = "-1";
             }
+            Map<String, Object> map = new HashMap<>();
+            map.put("appId", config == null ? "" : config.getAppId());
             map.put("articleId", articleId);
             session.responseHtml("/widget", map, requestPacket.getMethodStr(), requestPacket.getMsgId());
         });
@@ -84,19 +82,18 @@ public class ChangyanController {
      * 反向同步接口
      */
     public void sync() {
-        Map<String, Object> keyMap = new HashMap<>();
-        keyMap.put("key", "short_name,secret,status,commentEmailNotify,callbackUrl");
-        session.sendJsonMsg(keyMap, ActionType.GET_WEBSITE.name(), IdUtil.getInt(), MsgPacketStatus.SEND_REQUEST, msgPacket -> {
-            Map<String, Object> changyan = gson.fromJson(msgPacket.getDataStr(), Map.class);
-            String callbackUrl = (String) changyan.get("callbackUrl");
+        session.sendJsonMsg(WebsiteKeyRequest.of("short_name,secret,status,commentEmailNotify,callbackUrl"),
+                ActionType.GET_WEBSITE.name(), IdUtil.getInt(), MsgPacketStatus.SEND_REQUEST, msgPacket -> {
+            ChangyanConfig changyan = gson.fromJson(msgPacket.getDataStr(), ChangyanConfig.class);
+            String callbackUrl = changyan == null ? null : changyan.getCallbackUrl();
             String ignoreChar = "/p" + "/" + session.getPlugin().getShortName();
             try {
                 if (callbackUrl != null && new URL(callbackUrl).getPath().replace(ignoreChar, "").equals(requestInfo.getUri().replace(".action", ""))) {
                     String commentJsonStr = requestInfo.getParam().get("data")[0];
                     LOGGER.info(commentJsonStr);
                     final ChangyanComment changyanComment = gson.fromJson(commentJsonStr, ChangyanComment.class);
-                    Map<String, Object> response = new HashMap<>();
-                    dealSyncRequest(response, changyanComment, "on".equals(changyan.get("commentEmailNotify")));
+                    dealSyncRequest(new ChangyanSyncResponse(), changyanComment,
+                            changyan != null && changyan.isCommentEmailNotifyEnabled());
                 } else {
                     session.sendMsg(ContentType.HTML, ClientActionHandler.ACTION_NOT_FOUND_PAGE, requestPacket.getMethodStr(), requestPacket.getMsgId(), MsgPacketStatus.RESPONSE_ERROR);
                 }
@@ -108,48 +105,45 @@ public class ChangyanController {
 
     }
 
-    private Map<String, Object> pageData() {
-        Map<String, Object> data = new HashMap<>();
-        data.put("dark", isDarkMode());
-        data.put("colorPrimary", getAdminColorPrimary());
-        data.put("plugin", session.getPlugin());
-        data.put("config", loadConfig());
-        return successMap(data);
+    private ChangyanApiResponse<ChangyanPageData> pageData() {
+        ChangyanPageData data = new ChangyanPageData();
+        data.setDark(isDarkMode());
+        data.setColorPrimary(getAdminColorPrimary());
+        data.setPlugin(session.getPlugin());
+        data.setConfig(loadConfig());
+        return ChangyanApiResponse.success(data);
     }
 
-    private Map<String, Object> loadConfig() {
-        Map<String, Object> keyMap = new HashMap<>();
-        keyMap.put("key", CONFIG_KEYS);
-        Map response = session.getResponseSync(ContentType.JSON, keyMap, ActionType.GET_WEBSITE, Map.class);
-        Map<String, Object> config = response == null ? new HashMap<>() : new HashMap<>(response);
-        if (isBlank(config.get("callbackUrl"))) {
-            config.put("callbackUrl", requestInfo.getAccessUrl() + "/p/" + session.getPlugin().getShortName() + "/sync/" + UUID.randomUUID().toString().replace("-", ""));
+    private ChangyanConfig loadConfig() {
+        ChangyanConfig config = session.getResponseSync(ContentType.JSON, WebsiteKeyRequest.of(CONFIG_KEYS), ActionType.GET_WEBSITE,
+                ChangyanConfig.class);
+        if (config == null) {
+            config = new ChangyanConfig();
         }
-        normalizeSwitch(config, "status");
-        normalizeSwitch(config, "commentEmailNotify");
-        config.put("version", session.getPlugin().getVersion());
+        config.normalize(requestInfo.getAccessUrl() + "/p/" + session.getPlugin().getShortName() + "/sync/"
+                + UUID.randomUUID().toString().replace("-", ""), session.getPlugin().getVersion());
         return config;
     }
 
-    private boolean isBlank(Object value) {
-        return value == null || "".equals(value);
+    private ChangyanConfig requestConfig() {
+        ChangyanConfig config = new ChangyanConfig();
+        config.setAppId(paramValue("appId"));
+        config.setAppKey(paramValue("appKey"));
+        config.setCallbackUrl(paramValue("callbackUrl"));
+        config.setStatus(paramValue("status"));
+        config.setCommentEmailNotify(paramValue("commentEmailNotify"));
+        return config;
     }
 
-    private void normalizeSwitch(Map<String, Object> config, String key) {
-        if (!Objects.equals(config.get(key), "on")) {
-            config.put(key, "off");
+    private String paramValue(String key) {
+        if (requestInfo.getParam() == null || requestInfo.getParam().get(key) == null || requestInfo.getParam().get(key).length == 0) {
+            return null;
         }
+        return requestInfo.getParam().get(key)[0];
     }
 
-    private Map<String, Object> successMap(Object data) {
-        Map<String, Object> map = new HashMap<>();
-        map.put("success", true);
-        map.put("data", data);
-        return map;
-    }
-
-    private void response(Map<String, Object> map) {
-        session.sendMsg(ContentType.JSON, map, requestPacket.getMethodStr(), requestPacket.getMsgId(), MsgPacketStatus.RESPONSE_SUCCESS);
+    private void response(Object data) {
+        session.sendMsg(ContentType.JSON, data, requestPacket.getMethodStr(), requestPacket.getMsgId(), MsgPacketStatus.RESPONSE_SUCCESS);
     }
 
     private boolean isDarkMode() {
@@ -160,7 +154,7 @@ public class ChangyanController {
         return requestInfo.getAdminColorPrimary();
     }
 
-    private void dealSyncRequest(final Map<String, Object> response, final ChangyanComment changyanComment, final boolean emailNotify) {
+    private void dealSyncRequest(final ChangyanSyncResponse response, final ChangyanComment changyanComment, final boolean emailNotify) {
         if (changyanComment != null) {
             LOGGER.info("sync action " + changyanComment);
             for (CommentsEntry commentsEntry : changyanComment.getComments()) {
@@ -168,7 +162,7 @@ public class ChangyanController {
 
                 LOGGER.log(Level.INFO, "changyan call " + gson.toJson(comment));
                 session.sendMsg(ContentType.JSON, comment, ActionType.ADD_COMMENT.name(), IdUtil.getInt(), MsgPacketStatus.SEND_REQUEST, msgPacket -> {
-                    response.put("status", msgPacket.getStatus() == MsgPacketStatus.RESPONSE_SUCCESS ? 200 : 500);
+                    response.setStatus(msgPacket.getStatus() == MsgPacketStatus.RESPONSE_SUCCESS ? 200 : 500);
                     session.sendMsg(ContentType.JSON, response, requestPacket.getMethodStr(), requestPacket.getMsgId(), MsgPacketStatus.RESPONSE_SUCCESS);
                 });
                 if (emailNotify) {

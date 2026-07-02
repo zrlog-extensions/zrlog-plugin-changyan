@@ -2,7 +2,12 @@ package com.zrlog.plugin.changyan;
 
 import com.zrlog.plugin.RunConstants;
 import com.zrlog.plugin.type.RunType;
+import com.zrlog.plugin.changyan.controller.ChangyanApiResponse;
+import com.zrlog.plugin.changyan.controller.ChangyanConfig;
 import com.zrlog.plugin.changyan.controller.ChangyanController;
+import com.zrlog.plugin.changyan.controller.ChangyanPageData;
+import com.zrlog.plugin.changyan.controller.ChangyanSyncResponse;
+import com.zrlog.plugin.changyan.controller.WebsiteKeyRequest;
 import com.zrlog.plugin.changyan.response.ChangyanComment;
 import com.zrlog.plugin.changyan.response.CommentsEntry;
 import com.zrlog.plugin.changyan.response.User;
@@ -19,7 +24,9 @@ public class GraalvmAgentApplication {
     public static void main(String[] args) throws IOException {
         RunConstants.runType = RunType.AGENT;
         PluginNativeImageUtils.usedGsonObject();
-        PluginNativeImageUtils.gsonNativeAgentByClazz(Arrays.asList(User.class, ChangyanComment.class, CommentsEntry.class));
+        PluginNativeImageUtils.gsonNativeAgentByClazz(Arrays.asList(User.class, ChangyanComment.class, CommentsEntry.class,
+                ChangyanApiResponse.class, ChangyanConfig.class, ChangyanPageData.class, ChangyanSyncResponse.class,
+                WebsiteKeyRequest.class));
         String basePath = System.getProperty("user.dir").replace("\\target","").replace("/target", "");
         //PathKit.setRootPath(basePath);
         File file = new File(basePath + "/src/main/resources");
