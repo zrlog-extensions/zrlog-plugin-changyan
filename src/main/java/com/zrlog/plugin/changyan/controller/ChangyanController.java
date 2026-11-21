@@ -1,6 +1,7 @@
 package com.zrlog.plugin.changyan.controller;
 
 import com.google.gson.Gson;
+import com.zrlog.plugin.data.codec.PluginAppearance;
 import com.zrlog.plugin.IOSession;
 import com.zrlog.plugin.changyan.response.ChangyanComment;
 import com.zrlog.plugin.changyan.response.CommentsEntry;
@@ -108,6 +109,7 @@ public class ChangyanController {
     private ChangyanApiResponse<ChangyanPageData> pageData() {
         ChangyanPageData data = new ChangyanPageData();
         data.setDark(isDarkMode());
+        data.setAppearance(PluginAppearance.from(requestInfo));
         data.setColorPrimary(getAdminColorPrimary());
         data.setPlugin(session.getPlugin());
         data.setConfig(loadConfig());

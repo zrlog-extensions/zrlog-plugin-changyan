@@ -1,5 +1,9 @@
-import {Button, Col, Divider, Form, Grid, Input, Row, Space, Switch, Typography, message, theme} from "antd";
-import {SaveOutlined} from "@ant-design/icons";
+import {Button, Col, Divider, Form, Grid, Row, Space, theme} from "antd";
+import {useUiMessage} from "@zrlog/ui/feedback";
+import Input from "@zrlog/ui/antd/Input";
+import Switch from "@zrlog/ui/antd/Switch";
+import Typography from "@zrlog/ui/antd/Typography";
+import SaveIcon from "@zrlog/ui/icons/save";
 import axios from "axios";
 import {FunctionComponent, useEffect, useMemo, useState} from "react";
 import {PluginInfoResponse, StandardResponse} from "../index";
@@ -26,7 +30,7 @@ const PluginSettings: FunctionComponent<PluginSettingsProps> = ({data}) => {
     const isCompact = !screens.md;
     const [form] = Form.useForm<ChangyanFormValues>();
     const [loading, setLoading] = useState(false);
-    const [messageApi, contextHolder] = message.useMessage();
+    const [messageApi, contextHolder] = useUiMessage();
 
     useEffect(() => {
         form.setFieldsValue({
@@ -123,7 +127,7 @@ const PluginSettings: FunctionComponent<PluginSettingsProps> = ({data}) => {
 
                         <Divider/>
 
-                        <Button type="primary" htmlType="submit" icon={<SaveOutlined/>} loading={loading} style={isPhone ? {width: "100%"} : undefined}>
+                        <Button type="primary" htmlType="submit" icon={<SaveIcon/>} loading={loading} style={isPhone ? {width: "100%"} : undefined}>
                             保存
                         </Button>
                     </Form>
